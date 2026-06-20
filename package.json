@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && electron-builder",
-    "build:win": "electron-builder --win",
+    "build:win": "electron-vite build && electron-builder --win",
     "preview": "electron-vite preview"
   },
   "build": {
