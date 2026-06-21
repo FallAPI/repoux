@@ -26,7 +26,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0a0a0f',
-    frame: false, // Completely custom title bar
+    frame: false, 
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -132,7 +132,7 @@ async function registerIpcHandlers(): Promise<void> {
     return checkBepInEx(settings.gamePath);
   });
 
-  // Installed mods registry
+
   ipcMain.handle('mods:getInstalled', async () => {
     const settings = await readSettings();
     if (settings.gamePath) {
@@ -141,14 +141,14 @@ async function registerIpcHandlers(): Promise<void> {
     return (await readRegistry()).installedMods;
   });
 
-  // Thunderstore API
+
   ipcMain.handle('thunderstore:fetchAll', async () => fetchAllMods());
 
   ipcMain.handle('thunderstore:search', async (_e, query: string) =>
     searchMods(query),
   );
 
-  // Install / Uninstall / Toggle
+  
   ipcMain.handle('mod:install', async (_e, modFullName: string) => {
     const settings = await readSettings();
     if (!settings.gamePath) throw new Error('Game path not set');
@@ -202,7 +202,7 @@ async function registerIpcHandlers(): Promise<void> {
     return checkConflicts(settings.gamePath);
   });
 
-  // Launch
+ 
   ipcMain.handle('game:launch', async () => {
     const settings = await readSettings();
     if (!settings.gamePath) throw new Error('Game path not set');

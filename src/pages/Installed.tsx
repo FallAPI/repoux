@@ -207,10 +207,9 @@ export function InstalledPage() {
         )}
 
         {installedMods
-          .filter(mod => mod.status !== 'downloading') // Hide mods that are still downloading
+          .filter(mod => mod.status !== 'downloading')
           .map(mod => {
-          // Don't show progress in mod card during installation
-          // Progress is shown in Ghost Card instead
+
           const modIsInstalling = false
 
           return (

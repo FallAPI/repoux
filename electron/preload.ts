@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('install:progress', (_e, data) => cb(data))
     return () => ipcRenderer.removeAllListeners('install:progress')
   },
-  // Window controls
+
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
