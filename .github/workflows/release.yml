@@ -5,56 +5,172 @@ on:
     branches:
       - main
       - develop
-    tags:
-      - 'v*'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a GitHub Release from this build'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
+  pull-requests: write
+
+env:
+  NODE_VERSION: '24'
+  ARTIFACT_NAME: 'REPX-Windows-EXE'
 
 jobs:
   build:
+    name: Build (${{ github.ref_name }})
     runs-on: windows-latest
+    timeout-minutes: 30
+
+    outputs:
+      artifact-name: ${{ env.ARTIFACT_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
+      - name: Run tests
+        run: npm test --if-present
+
+      - name: Build Electron app
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $exes = Get-ChildItem -Path release -Filter *.exe -ErrorAction SilentlyContinue
+          if (-not $exes) {
+            Write-Error "No .exe files found in release/ — build may have failed silently."
+            exit 1
+          }
+          Write-Output "Build artifacts:"
+          $exes | ForEach-Object { Write-Output "  $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: release/*.exe
+          retention-days: 30
+          if-no-files-found: error
+
+  auto-pr:
+    name: Auto PR to main
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: 'npm'
+      - name: Create PR develop → main via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if a PR already exists
+          EXISTING=$(gh pr list \
+            --base main \
+            --head develop \
+            --state open \
+            --json number \
+            --jq '.[0].number')
 
-      - name: Install dependencies
-        run: npm ci
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists, skipping."
+          else
+            gh pr create \
+              --base main \
+              --head develop \
+              --title "🚀 Release: merge develop → main" \
+              --body "## Automated release PR
 
-      - name: Build Electron app
-        run: npm run build:win
+          This PR was automatically created after a successful build on \`develop\`.
 
-      - name: Upload Release Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: REPX-Windows-EXE
-          path: release/*.exe
-          retention-days: 30
+          **Triggered by:** ${{ github.actor }}
+          **Commit:** ${{ github.sha }}
 
-  release:
+          Merging this PR will automatically bump the version tag and publish a GitHub Release." \
+
+            echo "PR created successfully."
+          fi
+
+  auto-tag:
+    name: Auto Tag on main
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 5
+
+    outputs:
+      new_tag: ${{ steps.bump.outputs.new_tag }}
 
     steps:
-      - name: Download Release Artifact
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version and push tag
+        id: bump
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          release_branches: main
+          tag_prefix: v
+
+  release:
+    name: Create Release
+    needs: [build, auto-tag]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+
+    steps:
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: REPX-Windows-EXE
+          name: ${{ needs.build.outputs.artifact-name }}
           path: release-asset
+
+      - name: List release assets
+        run: ls -lh release-asset/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-asset/*.exe
           generate_release_notes: true
+          tag_name: ${{ needs.auto-tag.outputs.new_tag }}
+          draft: false
+          prerelease: ${{ contains(needs.auto-tag.outputs.new_tag, '-') }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
