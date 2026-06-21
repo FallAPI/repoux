@@ -66,38 +66,28 @@ async function assertNotInstalled(
   gamePath: string,
   candidate: { id: string; folder: string },
 ): Promise<void> {
-  console.log('[DEBUG] assertNotInstalled START', candidate.id, candidate.folder);
-
   const registry = await readRegistry();
   const installed = registry.installedMods;
-  console.log('[DEBUG] registry installedMods count:', installed.length);
 
   const byId = installed.find((m) => m.id === candidate.id);
   if (byId) {
-    console.log('[DEBUG] BLOCKED byId:', byId);
     throw new Error(`Mod ${candidate.id} sudah terinstall`);
   }
 
   const pluginsPath = path.join(gamePath, 'BepInEx', 'plugins');
   const targetPath = path.join(pluginsPath, candidate.folder);
-  console.log('[DEBUG] checking disk path:', targetPath, 'exists:', await fs.exists(targetPath));
 
   if (await fs.exists(targetPath)) {
-    console.log('[DEBUG] BLOCKED folder exists on disk');
     throw new Error(`Mod ${candidate.id} sudah terinstall (folder conflict)`);
   }
 
   const entries = await fs.readdir(pluginsPath);
-  console.log('[DEBUG] plugins folder entries:', entries);
   for (const f of entries) {
     const full = path.join(pluginsPath, f);
     if (f === candidate.folder && (await fs.stat(full)).isDirectory()) {
-      console.log('[DEBUG] BLOCKED folder match in readdir:', f);
       throw new Error(`Mod ${candidate.id} sudah terinstall (folder conflict)`);
     }
   }
-
-  console.log('[DEBUG] assertNotInstalled PASSED');
 }
 
 const activeControllers = new Map<string, AbortController>();
@@ -253,10 +243,26 @@ async function installModDirect(
     await pipeline(stream, createWriteStream(tmpZip));
 
     await fs.ensureDir(modInstallPath);
+    
+    onProgress?.({
+      step: 'extracting',
+      message: `Extracting ${mod.name}...`,
+      percent: 0,
+    });
+
+    // Load ZIP with lazy extraction to prevent memory spike
     const zip = new AdmZip(tmpZip);
     const entries = zip.getEntries();
+    const totalEntries = entries.filter(e => !e.isDirectory).length;
+    let extractedCount = 0;
 
-    for (const entry of entries) {
+    // Extract files in chunks with async yield to keep UI responsive
+    const YIELD_INTERVAL = 10; // Yield every N files
+    const PROGRESS_UPDATE_INTERVAL = 200; // ms
+    let lastProgressUpdate = Date.now();
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
       if (entry.isDirectory) continue;
 
       const entryName = entry.entryName;
@@ -268,7 +274,32 @@ async function installModDirect(
       const destPath = path.join(modInstallPath, relativePath);
       await fs.ensureDir(path.dirname(destPath));
       await fs.writeFile(destPath, entry.getData());
+
+      extractedCount++;
+
+      // Yield to event loop periodically to prevent UI freeze
+      if (extractedCount % YIELD_INTERVAL === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      // Update progress with throttling
+      const now = Date.now();
+      if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL && totalEntries > 0) {
+        lastProgressUpdate = now;
+        const percent = Math.round((extractedCount / totalEntries) * 100);
+        onProgress?.({
+          step: 'extracting',
+          message: `Extracting ${mod.name}... (${extractedCount}/${totalEntries})`,
+          percent,
+        });
+      }
     }
+
+    onProgress?.({
+      step: 'extracting',
+      message: `Extracting ${mod.name}...`,
+      percent: 100,
+    });
 
     const installedMod: InstalledMod = {
       id: mod.full_name,
@@ -380,8 +411,16 @@ export async function installModFromZip(
   await fs.ensureDir(pluginsPath);
   const zip = new AdmZip(zipPath);
   const entries = zip.getEntries();
+  const totalEntries = entries.filter(e => !e.isDirectory).length;
+  let extractedCount = 0;
 
-  for (const entry of entries) {
+  // Extract with async yield to prevent UI freeze
+  const YIELD_INTERVAL = 10;
+  const PROGRESS_UPDATE_INTERVAL = 200;
+  let lastProgressUpdate = Date.now();
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
     if (entry.isDirectory) continue;
 
     const entryName = entry.entryName;
@@ -393,6 +432,26 @@ export async function installModFromZip(
     const destPath = path.join(pluginsPath, modFolderName, relativePath);
     await fs.ensureDir(path.dirname(destPath));
     await fs.writeFile(destPath, entry.getData());
+
+    extractedCount++;
+
+    // Yield to event loop periodically
+    if (extractedCount % YIELD_INTERVAL === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    // Update progress
+    const now = Date.now();
+    if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL && totalEntries > 0) {
+      lastProgressUpdate = now;
+      const basePercent = 50; // Start from 50%
+      const extractPercent = Math.round((extractedCount / totalEntries) * 40);
+      onProgress?.({
+        step: 'extracting',
+        message: `Installing ${modFolderName}... (${extractedCount}/${totalEntries})`,
+        percent: basePercent + extractPercent,
+      });
+    }
   }
 
   const version =
