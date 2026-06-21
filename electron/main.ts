@@ -26,12 +26,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0a0a0f',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#12121a',
-      symbolColor: '#e2e8f0',
-      height: 36,
-    },
+    frame: false, // Completely custom title bar
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -50,7 +45,26 @@ function createWindow(): void {
 app.whenReady().then(() => {
   createWindow();
   registerIpcHandlers();
+  registerWindowControls();
 });
+
+function registerWindowControls(): void {
+  ipcMain.handle('window:minimize', () => {
+    mainWindow?.minimize();
+  });
+
+  ipcMain.handle('window:maximize', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+  });
+
+  ipcMain.handle('window:close', () => {
+    mainWindow?.close();
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

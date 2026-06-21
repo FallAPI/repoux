@@ -101,8 +101,11 @@ declare global {
       checkUpdates: () => Promise<
         Record<string, { hasUpdate: boolean; latestVersion: string }>
       >;
-    checkConflicts: () => Promise<ModConflict[]>;
-    cancelInstall: (modId: string) => Promise<boolean>;
+      checkConflicts: () => Promise<ModConflict[]>;
+      cancelInstall: (modId: string) => Promise<boolean>;
+      minimizeWindow: () => Promise<void>;
+      maximizeWindow: () => Promise<void>;
+      closeWindow: () => Promise<void>;
     };
   }
 }

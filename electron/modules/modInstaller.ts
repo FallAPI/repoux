@@ -17,6 +17,7 @@ import {
   type InstalledMod,
 } from './modRegistry';
 import { app } from 'electron';
+import { extractZipWithWorker } from './extractHelper';
 
 export interface InstallProgress {
   step: 'downloading' | 'extracting' | 'registering' | 'done' | 'error';
@@ -129,24 +130,8 @@ export async function installMod(
 
     await assertNotInstalled(gamePath, { id: mod.full_name, folder: modFolderName });
 
-    const placeholder: InstalledMod = {
-      id: mod.full_name,
-      name: mod.name,
-      version: '0.0.0',
-      author: mod.owner,
-      description: version.description || '',
-      installPath: modFolderName,
-      enabled: true,
-      installedAt: new Date().toISOString(),
-      dependencies: version.dependencies || [],
-      sizeMB: version.file_size
-        ? Math.round(version.file_size / 1024 / 1024)
-        : undefined,
-      iconUrl: version.icon,
-      status: 'downloading',
-    };
-
-    await addMod(placeholder);
+    // Don't add placeholder to registry - mod will be added after successful installation
+    // Progress is shown via Ghost Card in UI instead
 
     await resolveAndInstallDependencies(gamePath, mod, onProgress);
 
@@ -250,56 +235,19 @@ async function installModDirect(
       percent: 0,
     });
 
-    // Load ZIP with lazy extraction to prevent memory spike
-    const zip = new AdmZip(tmpZip);
-    const entries = zip.getEntries();
-    const totalEntries = entries.filter(e => !e.isDirectory).length;
-    let extractedCount = 0;
-
-    // Extract files in chunks with async yield to keep UI responsive
-    const YIELD_INTERVAL = 10; // Yield every N files
-    const PROGRESS_UPDATE_INTERVAL = 200; // ms
-    let lastProgressUpdate = Date.now();
-
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      if (entry.isDirectory) continue;
-
-      const entryName = entry.entryName;
-      const parts = entryName.split('/');
-      const relativePath =
-        parts.length > 1 ? parts.slice(1).join('/') : entryName;
-      if (!relativePath) continue;
-
-      const destPath = path.join(modInstallPath, relativePath);
-      await fs.ensureDir(path.dirname(destPath));
-      await fs.writeFile(destPath, entry.getData());
-
-      extractedCount++;
-
-      // Yield to event loop periodically to prevent UI freeze
-      if (extractedCount % YIELD_INTERVAL === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-
-      // Update progress with throttling
-      const now = Date.now();
-      if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL && totalEntries > 0) {
-        lastProgressUpdate = now;
-        const percent = Math.round((extractedCount / totalEntries) * 100);
-        onProgress?.({
-          step: 'extracting',
-          message: `Extracting ${mod.name}... (${extractedCount}/${totalEntries})`,
-          percent,
-        });
-      }
-    }
-
-    onProgress?.({
-      step: 'extracting',
-      message: `Extracting ${mod.name}...`,
-      percent: 100,
+    // Use worker thread for extraction to prevent UI blocking
+    await extractZipWithWorker({
+      zipPath: tmpZip,
+      extractPath: modInstallPath,
+      modName: mod.name,
+      onProgress,
     });
+
+    // Verify extraction succeeded before registering mod
+    const files = await fs.readdir(modInstallPath);
+    if (files.length === 0) {
+      throw new Error('Extraction failed: mod folder is empty');
+    }
 
     const installedMod: InstalledMod = {
       id: mod.full_name,
@@ -409,53 +357,25 @@ export async function installModFromZip(
   });
 
   await fs.ensureDir(pluginsPath);
-  const zip = new AdmZip(zipPath);
-  const entries = zip.getEntries();
-  const totalEntries = entries.filter(e => !e.isDirectory).length;
-  let extractedCount = 0;
+  const modInstallPath = path.join(pluginsPath, modFolderName);
 
-  // Extract with async yield to prevent UI freeze
-  const YIELD_INTERVAL = 10;
-  const PROGRESS_UPDATE_INTERVAL = 200;
-  let lastProgressUpdate = Date.now();
+  // Use worker thread for extraction
+  await extractZipWithWorker({
+    zipPath: zipPath,
+    extractPath: modInstallPath,
+    modName: modFolderName,
+    onProgress: (progress) => {
+      // Adjust progress to start from 50%
+      if (progress.percent !== undefined) {
+        const adjustedPercent = 50 + Math.round(progress.percent * 0.4);
+        onProgress?.({ ...progress, percent: adjustedPercent });
+      } else {
+        onProgress?.(progress);
+      }
+    },
+  });
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (entry.isDirectory) continue;
-
-    const entryName = entry.entryName;
-    const parts = entryName.split('/');
-    const relativePath =
-      parts.length > 1 ? parts.slice(1).join('/') : entryName;
-    if (!relativePath) continue;
-
-    const destPath = path.join(pluginsPath, modFolderName, relativePath);
-    await fs.ensureDir(path.dirname(destPath));
-    await fs.writeFile(destPath, entry.getData());
-
-    extractedCount++;
-
-    // Yield to event loop periodically
-    if (extractedCount % YIELD_INTERVAL === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-
-    // Update progress
-    const now = Date.now();
-    if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL && totalEntries > 0) {
-      lastProgressUpdate = now;
-      const basePercent = 50; // Start from 50%
-      const extractPercent = Math.round((extractedCount / totalEntries) * 40);
-      onProgress?.({
-        step: 'extracting',
-        message: `Installing ${modFolderName}... (${extractedCount}/${totalEntries})`,
-        percent: basePercent + extractPercent,
-      });
-    }
-  }
-
-  const version =
-    entries.length > 0 ? entries[0].entryName.split('/')[0] : '1.0.0';
+  const version = '1.0.0'; // Default version for local zips
   const installedMod: InstalledMod = {
     id: modFolderName,
     name: modFolderName,
