@@ -22,6 +22,16 @@
     user-select: none;
   }
 
+  /* Make interactive elements clickable in draggable regions */
+  button, input, select, textarea, a, [role="button"], .no-drag, aside, main {
+    -webkit-app-region: no-drag;
+  }
+
+  /* Allow dragging from empty areas */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
   code, .font-mono {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
   }

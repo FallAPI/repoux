@@ -155,7 +155,7 @@ export function InstalledPage() {
       )}
 
       {/* Ghost Card - Install Progress */}
-      {(installingModFromBrowse || installingZip) && progress && (
+      {(isInstalling || installingZip) && progress && (
         <div className="mx-8 mt-4 glass-card border-repo-accent/40 rounded-xl p-4 flex gap-4">
           <div className="w-12 h-12 rounded-lg bg-repo-surface flex-shrink-0 flex items-center justify-center">
             {installingModFromBrowse ? (
@@ -206,9 +206,11 @@ export function InstalledPage() {
           </div>
         )}
 
-        {installedMods.map(mod => {
-          const modIsInstalling = isInstalling && mod.id === installingModId
-          const modProgress = modIsInstalling ? progress : null
+        {installedMods
+          .filter(mod => mod.status !== 'downloading')
+          .map(mod => {
+
+          const modIsInstalling = false
 
           return (
             <div
@@ -234,46 +236,27 @@ export function InstalledPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 mt-3">
-                  {modIsInstalling && modProgress ? (
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-repo-subtext">{modProgress.message}</span>
-                        <span className="text-xs text-repo-accent font-mono">
-                          {modProgress.percent !== undefined ? `${modProgress.percent}%` : ''}
-                        </span>
-                      </div>
-                      <div className="w-full bg-repo-surface rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-repo-accent h-full rounded-full transition-all duration-300"
-                          style={{ width: `${modProgress.percent ?? 0}%` }}
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => handleToggle(mod.id, mod.enabled)}
-                        disabled={modIsInstalling}
-                        className={`text-xs px-4 py-1.5 rounded-lg font-bold transition-all border
-                          ${mod.enabled
-                            ? 'border-repo-green text-repo-green bg-repo-green/10'
-                            : 'border-repo-red text-repo-red bg-repo-red/10'
-                          } disabled:opacity-60 disabled:cursor-not-allowed`}
-                      >
-                        {mod.enabled ? '● ACTIVE' : '○ DISABLED'}
-                      </button>
+                  <>
+                    <button
+                      onClick={() => handleToggle(mod.id, mod.enabled)}
+                      className={`text-xs px-4 py-1.5 rounded-lg font-bold transition-all border
+                        ${mod.enabled
+                          ? 'border-repo-green text-repo-green bg-repo-green/10'
+                          : 'border-repo-red text-repo-red bg-repo-red/10'
+                        }`}
+                    >
+                      {mod.enabled ? '● ACTIVE' : '○ DISABLED'}
+                    </button>
 
-                      <button
-                        onClick={() => handleUninstall(mod.id)}
-                        disabled={modIsInstalling}
-                        className="text-xs px-3 py-1 rounded-lg font-medium border border-repo-border
-                          text-repo-muted hover:border-repo-red/40 hover:text-repo-red hover:bg-repo-red/10
-                          transition-all ml-auto disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        Uninstall
-                      </button>
-                    </>
-                  )}
+                    <button
+                      onClick={() => handleUninstall(mod.id)}
+                      className="text-xs px-3 py-1 rounded-lg font-medium border border-repo-border
+                        text-repo-muted hover:border-repo-red/40 hover:text-repo-red hover:bg-repo-red/10
+                        transition-all ml-auto"
+                    >
+                      Uninstall
+                    </button>
+                  </>
                 </div>
               </div>
             </div>

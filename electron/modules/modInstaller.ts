@@ -17,6 +17,7 @@ import {
   type InstalledMod,
 } from './modRegistry';
 import { app } from 'electron';
+import { extractZipWithWorker } from './extractHelper';
 
 export interface InstallProgress {
   step: 'downloading' | 'extracting' | 'registering' | 'done' | 'error';
@@ -66,38 +67,28 @@ async function assertNotInstalled(
   gamePath: string,
   candidate: { id: string; folder: string },
 ): Promise<void> {
-  console.log('[DEBUG] assertNotInstalled START', candidate.id, candidate.folder);
-
   const registry = await readRegistry();
   const installed = registry.installedMods;
-  console.log('[DEBUG] registry installedMods count:', installed.length);
 
   const byId = installed.find((m) => m.id === candidate.id);
   if (byId) {
-    console.log('[DEBUG] BLOCKED byId:', byId);
     throw new Error(`Mod ${candidate.id} sudah terinstall`);
   }
 
   const pluginsPath = path.join(gamePath, 'BepInEx', 'plugins');
   const targetPath = path.join(pluginsPath, candidate.folder);
-  console.log('[DEBUG] checking disk path:', targetPath, 'exists:', await fs.exists(targetPath));
 
   if (await fs.exists(targetPath)) {
-    console.log('[DEBUG] BLOCKED folder exists on disk');
     throw new Error(`Mod ${candidate.id} sudah terinstall (folder conflict)`);
   }
 
   const entries = await fs.readdir(pluginsPath);
-  console.log('[DEBUG] plugins folder entries:', entries);
   for (const f of entries) {
     const full = path.join(pluginsPath, f);
     if (f === candidate.folder && (await fs.stat(full)).isDirectory()) {
-      console.log('[DEBUG] BLOCKED folder match in readdir:', f);
       throw new Error(`Mod ${candidate.id} sudah terinstall (folder conflict)`);
     }
   }
-
-  console.log('[DEBUG] assertNotInstalled PASSED');
 }
 
 const activeControllers = new Map<string, AbortController>();
@@ -139,24 +130,8 @@ export async function installMod(
 
     await assertNotInstalled(gamePath, { id: mod.full_name, folder: modFolderName });
 
-    const placeholder: InstalledMod = {
-      id: mod.full_name,
-      name: mod.name,
-      version: '0.0.0',
-      author: mod.owner,
-      description: version.description || '',
-      installPath: modFolderName,
-      enabled: true,
-      installedAt: new Date().toISOString(),
-      dependencies: version.dependencies || [],
-      sizeMB: version.file_size
-        ? Math.round(version.file_size / 1024 / 1024)
-        : undefined,
-      iconUrl: version.icon,
-      status: 'downloading',
-    };
-
-    await addMod(placeholder);
+    // Don't add placeholder to registry - mod will be added after successful installation
+    // Progress is shown via Ghost Card in UI instead
 
     await resolveAndInstallDependencies(gamePath, mod, onProgress);
 
@@ -253,21 +228,25 @@ async function installModDirect(
     await pipeline(stream, createWriteStream(tmpZip));
 
     await fs.ensureDir(modInstallPath);
-    const zip = new AdmZip(tmpZip);
-    const entries = zip.getEntries();
+    
+    onProgress?.({
+      step: 'extracting',
+      message: `Extracting ${mod.name}...`,
+      percent: 0,
+    });
 
-    for (const entry of entries) {
-      if (entry.isDirectory) continue;
+    // Use worker thread for extraction to prevent UI blocking
+    await extractZipWithWorker({
+      zipPath: tmpZip,
+      extractPath: modInstallPath,
+      modName: mod.name,
+      onProgress,
+    });
 
-      const entryName = entry.entryName;
-      const parts = entryName.split('/');
-      const relativePath =
-        parts.length > 1 ? parts.slice(1).join('/') : entryName;
-      if (!relativePath) continue;
-
-      const destPath = path.join(modInstallPath, relativePath);
-      await fs.ensureDir(path.dirname(destPath));
-      await fs.writeFile(destPath, entry.getData());
+    // Verify extraction succeeded before registering mod
+    const files = await fs.readdir(modInstallPath);
+    if (files.length === 0) {
+      throw new Error('Extraction failed: mod folder is empty');
     }
 
     const installedMod: InstalledMod = {
@@ -378,25 +357,25 @@ export async function installModFromZip(
   });
 
   await fs.ensureDir(pluginsPath);
-  const zip = new AdmZip(zipPath);
-  const entries = zip.getEntries();
+  const modInstallPath = path.join(pluginsPath, modFolderName);
 
-  for (const entry of entries) {
-    if (entry.isDirectory) continue;
+  // Use worker thread for extraction
+  await extractZipWithWorker({
+    zipPath: zipPath,
+    extractPath: modInstallPath,
+    modName: modFolderName,
+    onProgress: (progress) => {
+      // Adjust progress to start from 50%
+      if (progress.percent !== undefined) {
+        const adjustedPercent = 50 + Math.round(progress.percent * 0.4);
+        onProgress?.({ ...progress, percent: adjustedPercent });
+      } else {
+        onProgress?.(progress);
+      }
+    },
+  });
 
-    const entryName = entry.entryName;
-    const parts = entryName.split('/');
-    const relativePath =
-      parts.length > 1 ? parts.slice(1).join('/') : entryName;
-    if (!relativePath) continue;
-
-    const destPath = path.join(pluginsPath, modFolderName, relativePath);
-    await fs.ensureDir(path.dirname(destPath));
-    await fs.writeFile(destPath, entry.getData());
-  }
-
-  const version =
-    entries.length > 0 ? entries[0].entryName.split('/')[0] : '1.0.0';
+  const version = '1.0.0'; // Default version for local zips
   const installedMod: InstalledMod = {
     id: modFolderName,
     name: modFolderName,

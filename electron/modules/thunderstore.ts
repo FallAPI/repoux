@@ -34,11 +34,9 @@ export interface ThunderstoreMod {
 
 let cachedMods: ThunderstoreMod[] | null = null;
 let cacheTime = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000; 
 
-/**
- * Fetch all R.E.P.O mods from Thunderstore
- */
+
 export async function fetchAllMods(): Promise<ThunderstoreMod[]> {
   const now = Date.now();
   if (cachedMods && now - cacheTime < CACHE_TTL) {
@@ -57,9 +55,7 @@ export async function fetchAllMods(): Promise<ThunderstoreMod[]> {
   return cachedMods;
 }
 
-/**
- * Search mods by query string
- */
+
 export async function searchMods(query: string): Promise<ThunderstoreMod[]> {
   const mods = await fetchAllMods();
   if (!query.trim()) return mods;
@@ -73,16 +69,12 @@ export async function searchMods(query: string): Promise<ThunderstoreMod[]> {
   );
 }
 
-/**
- * Get latest version of a mod
- */
+
 export function getLatestVersion(mod: ThunderstoreMod): ThunderstoreVersion {
   return mod.versions[0];
 }
 
-/**
- * Get download URL for a specific mod version
- */
+
 export function getDownloadUrl(mod: ThunderstoreMod, version?: string): string {
   if (!version) return getLatestVersion(mod).download_url;
   const v = mod.versions.find((v) => v.version_number === version);

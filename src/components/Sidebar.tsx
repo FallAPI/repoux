@@ -12,7 +12,7 @@ export function Sidebar() {
   const { page, setPage, bepinexStatus, installedMods } = useAppStore()
 
   return (
-    <aside className="w-56 glass border-r border-white/5 flex flex-col">
+    <aside className="w-56 glass border-r border-white/5 flex flex-col no-drag">
       {/* Logo */}
       <div className="px-5 pt-10 pb-6">
         <div className="flex items-center gap-3">

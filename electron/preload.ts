@@ -23,5 +23,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onProgress: (cb: (data: { step: string; message: string; percent?: number }) => void) => {
     ipcRenderer.on('install:progress', (_e, data) => cb(data))
     return () => ipcRenderer.removeAllListeners('install:progress')
-  }
+  },
+
+  minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+  maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
 })
