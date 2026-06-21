@@ -51,7 +51,13 @@ jobs:
 
       - name: Strip v prefix for package.json
         id: clean
-        run: echo "version=${{ steps.bump.outputs.new_tag }}" | sed 's/v//' >> $GITHUB_OUTPUT
+        run: |
+          VERSION="${{ steps.bump.outputs.new_tag }}"
+          if [ -z "$VERSION" ]; then
+            echo "Error: new_tag is empty from github-tag-action"
+            exit 1
+          fi
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
 
   # ─── Job 2: Build (develop = build only, main = build with version bump) ───
   build:
@@ -86,6 +92,10 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ needs.auto-tag.outputs.version }}"
+          if (-not $version) {
+            Write-Error "Version is empty from auto-tag job. Aborting."
+            exit 1
+          }
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
           $pkg.version = $version
           $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
