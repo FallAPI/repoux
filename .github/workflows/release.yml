@@ -9,12 +9,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: 'Create a GitHub Release from this build'
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,10 +23,45 @@ env:
   ARTIFACT_NAME: 'REPX-Windows-EXE'
 
 jobs:
+  # ─── Job 1: Auto-tag (hanya di main) ───────────────────────────────────────
+  auto-tag:
+    name: Bump version tag
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 5
+
+    outputs:
+      new_tag: ${{ steps.bump.outputs.new_tag }}
+      version: ${{ steps.clean.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version and push tag
+        id: bump
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          release_branches: main
+          tag_prefix: v
+
+      - name: Strip v prefix for package.json
+        id: clean
+        run: echo "version=${{ steps.bump.outputs.new_tag }}" | sed 's/v//' >> $GITHUB_OUTPUT
+
+  # ─── Job 2: Build (develop = build only, main = build with version bump) ───
   build:
     name: Build (${{ github.ref_name }})
     runs-on: windows-latest
     timeout-minutes: 30
+    needs: [auto-tag]
+    if: |
+      always() &&
+      (github.ref == 'refs/heads/develop' || needs.auto-tag.result == 'success')
 
     outputs:
       artifact-name: ${{ env.ARTIFACT_NAME }}
@@ -51,6 +80,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --prefer-offline
+
+      - name: Set version in package.json (main only)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          $version = "${{ needs.auto-tag.outputs.version }}"
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $pkg.version = $version
+          $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json
+          Write-Output "Version set to $version"
 
       - name: Run tests
         run: npm test --if-present
@@ -79,6 +118,7 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  # ─── Job 3: Auto-PR (hanya di develop) ─────────────────────────────────────
   auto-pr:
     name: Auto PR to main
     needs: build
@@ -94,7 +134,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Check if a PR already exists
           EXISTING=$(gh pr list \
             --base main \
             --head develop \
@@ -116,39 +155,14 @@ jobs:
           **Triggered by:** ${{ github.actor }}
           **Commit:** ${{ github.sha }}
 
-          Merging this PR will automatically bump the version tag and publish a GitHub Release." \
-
+          Merging this PR will automatically bump the version tag and publish a GitHub Release."
             echo "PR created successfully."
           fi
 
-  auto-tag:
-    name: Auto Tag on main
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    timeout-minutes: 5
-
-    outputs:
-      new_tag: ${{ steps.bump.outputs.new_tag }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Bump version and push tag
-        id: bump
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
-          release_branches: main
-          tag_prefix: v
-
+  # ─── Job 4: Release (hanya di main setelah build sukses) ───────────────────
   release:
     name: Create Release
-    needs: [build, auto-tag]
+    needs: [auto-tag, build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
