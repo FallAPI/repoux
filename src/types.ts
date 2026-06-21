@@ -106,6 +106,13 @@ declare global {
       minimizeWindow: () => Promise<void>;
       maximizeWindow: () => Promise<void>;
       closeWindow: () => Promise<void>;
+      // Profile management
+      getProfiles: () => Promise<ProfileSummary[]>;
+      saveProfile: (profile: ModProfile) => Promise<void>;
+      loadProfile: (profileName: string) => Promise<ModProfile | null>;
+      deleteProfile: (profileName: string) => Promise<boolean>;
+      applyProfile: (profileName: string) => Promise<void>;
+      createProfileFromCurrent: (profileName: string) => Promise<void>;
     };
   }
 }

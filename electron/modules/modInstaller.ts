@@ -130,10 +130,11 @@ export async function installMod(
 
     await assertNotInstalled(gamePath, { id: mod.full_name, folder: modFolderName });
 
-    // Don't add placeholder to registry - mod will be added after successful installation
-    // Progress is shown via Ghost Card in UI instead
+    // Fetch once here and share the cache with the full dependency tree so we
+    // never hit the Thunderstore API more than once per install operation.
+    const allMods = await fetchAllMods();
 
-    await resolveAndInstallDependencies(gamePath, mod, onProgress);
+    await resolveAndInstallDependencies(gamePath, mod, onProgress, new Set(), effectiveSignal, allMods);
 
     return installModDirect(gamePath, mod, onProgress, effectiveSignal);
   } catch (error) {
@@ -148,6 +149,9 @@ async function resolveAndInstallDependencies(
   onProgress?: (progress: InstallProgress) => void,
   visited: Set<string> = new Set(),
   signal?: AbortSignal,
+  // Accept a pre-fetched mod list so we don't fetch from network on every
+  // recursive call (which can happen once per dependency).
+  allModsCache?: ThunderstoreMod[],
 ): Promise<void> {
   if (visited.has(mod.full_name)) return;
   visited.add(mod.full_name);
@@ -166,9 +170,11 @@ async function resolveAndInstallDependencies(
   const installedMap = new Map(installed.map((m) => [m.id, m]));
   const missing: ThunderstoreMod[] = [];
 
+  // Fetch the full mod list only once; reuse the cache for all recursive calls.
+  const allMods = allModsCache ?? (await fetchAllMods());
+
   for (const depFullName of dependencies) {
     if (installedMap.has(depFullName)) continue;
-    const allMods = await fetchAllMods();
     const depMod = allMods.find((m) => m.full_name === depFullName);
     if (!depMod) continue;
     missing.push(depMod);
@@ -182,6 +188,7 @@ async function resolveAndInstallDependencies(
       onProgress,
       new Set(visited),
       signal,
+      allMods, // pass cache down to avoid repeated fetches
     );
     await installModDirect(gamePath, dep, onProgress, signal);
   }

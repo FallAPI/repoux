@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import type { ThunderstoreMod } from '../types'
 import { ModCard } from '../components/ModCard'
@@ -68,14 +68,17 @@ export function BrowsePage() {
     setInstallingModId(mod.full_name)
     setInstallProgress(null)
     setError(null)
+
+    // Register listener BEFORE the install call and clean it up in `finally`
+    // so it is always removed regardless of success or failure.
+    const removeListener = window.electronAPI.onProgress((p) => {
+      setInstallProgress(p)
+    })
+
     try {
-      const removeListener = window.electronAPI.onProgress((p) => {
-        setInstallProgress(p)
-      })
       await window.electronAPI.installMod(mod.full_name)
       const updated = await window.electronAPI.getInstalledMods()
       setInstalledMods(updated)
-      removeListener()
       setInstallProgress(null)
     } catch (e) {
       const raw = e instanceof Error ? e.message : ''
@@ -91,18 +94,28 @@ export function BrowsePage() {
         setError('Gagal menginstall mod.')
       }
     } finally {
+      // Always clean up the listener — even if install threw an error.
+      removeListener()
       setInstallingModId(null)
     }
   }
 
-  const installedIds = new Set(installedMods.map(m => m.id))
-  const filtered = query.trim()
-    ? browseMods.filter(m =>
-      m.name.toLowerCase().includes(query.toLowerCase()) ||
-      m.owner.toLowerCase().includes(query.toLowerCase()) ||
-      m.versions[0]?.description.toLowerCase().includes(query.toLowerCase())
+  const installedIds = useMemo(
+    () => new Set(installedMods.map(m => m.id)),
+    [installedMods]
+  )
+
+  // Memoize the filtered list so re-renders from unrelated state changes
+  // (e.g. progress updates) don't re-run the filter over 1000+ mods.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return browseMods
+    return browseMods.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      m.owner.toLowerCase().includes(q) ||
+      m.versions[0]?.description.toLowerCase().includes(q)
     )
-    : browseMods
+  }, [query, browseMods])
 
   const totalItems = filtered.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
