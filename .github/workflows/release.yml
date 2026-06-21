@@ -117,7 +117,7 @@ jobs:
           **Commit:** ${{ github.sha }}
 
           Merging this PR will automatically bump the version tag and publish a GitHub Release." \
-              --label "release"
+
             echo "PR created successfully."
           fi
 
