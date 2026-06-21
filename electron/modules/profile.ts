@@ -22,7 +22,6 @@ function getProfilePath(profileName: string): string {
   return path.join(getProfilesDir(), `${sanitized}.json`);
 }
 
-// ─── Async helpers ───────────────────────────────────────────────────────────
 
 async function ensureProfilesDir(): Promise<void> {
   await fs.ensureDir(getProfilesDir());
@@ -49,14 +48,12 @@ async function getProfiles(): Promise<ModProfile[]> {
         profiles.push(data);
       }
     } catch {
-      // skip corrupted profiles
     }
   }
 
   return profiles.sort((a, b) => a.profileName.localeCompare(b.profileName));
 }
 
-// ─── Exported functions (all async) ─────────────────────────────────────────
 
 export async function getProfileList(): Promise<ProfileSummary[]> {
   const profiles = await getProfiles();
@@ -89,7 +86,7 @@ export async function applyProfile(profileName: string, gamePath: string): Promi
   const profile = await loadProfile(profileName);
   if (!profile) throw new Error('Profile not found');
 
-  // readRegistry is async — await it properly
+
   const registry = await readRegistry();
   const installedMap = new Map(registry.installedMods.map((m) => [m.id, m]));
   const targetEnabled = new Set(profile.mods);
@@ -109,7 +106,7 @@ export async function applyProfile(profileName: string, gamePath: string): Promi
     }
   }
 
-  // Run all toggle operations in parallel for speed
+
   await Promise.all(toggleTasks);
 }
 

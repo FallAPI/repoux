@@ -11,30 +11,14 @@ interface ExtractOptions {
   onProgress?: (progress: InstallProgress) => void;
 }
 
-/**
- * Resolves the path to the compiled extractWorker bundle.
- * electron-vite outputs it to the same directory as main (out/main/).
- */
+
 function resolveWorkerPath(): string {
   const builtWorker = path.join(__dirname, 'extractWorker.js');
   if (fs.existsSync(builtWorker)) return builtWorker;
 
-  // Dev-mode fallback (ts source alongside this file)
   return path.join(__dirname, 'extractWorker.ts');
 }
 
-/**
- * Extracts a ZIP archive using a dedicated worker thread so the main-process
- * event loop (and the Electron UI) is never blocked during extraction.
- *
- * Flow:
- *  1. Worker extracts into a temp folder and sends progress messages.
- *  2. Worker sends { type: 'complete' } when done — we resolve the Promise
- *     at that point (not on the 'exit' event) to avoid race conditions.
- *  3. After the Promise resolves, we copy the temp folder to the real
- *     destination and verify it is non-empty.
- *  4. Temp folder is always cleaned up in the finally block.
- */
 export async function extractZipWithWorker(options: ExtractOptions): Promise<void> {
   const { zipPath, extractPath, modName, onProgress } = options;
 
@@ -49,7 +33,7 @@ export async function extractZipWithWorker(options: ExtractOptions): Promise<voi
   await fs.ensureDir(tempPath);
 
   try {
-    // ── Phase 1: extraction inside worker thread ───────────────────────────
+   
     await runWorker(resolveWorkerPath(), {
       zipPath,
       extractPath,
@@ -58,7 +42,7 @@ export async function extractZipWithWorker(options: ExtractOptions): Promise<voi
       tempPath,
     }, onProgress);
 
-    // ── Phase 2: move files to final destination ───────────────────────────
+  
     onProgress?.({
       step: 'extracting',
       message: `Finalizing ${modName}...`,
@@ -83,7 +67,7 @@ export async function extractZipWithWorker(options: ExtractOptions): Promise<voi
   }
 }
 
-// ── Internal helper ──────────────────────────────────────────────────────────
+
 
 interface WorkerData {
   zipPath: string;
@@ -128,9 +112,7 @@ function runWorker(
           break;
 
         case 'complete':
-          // Worker is done with extraction — resolve immediately.
-          // We do NOT wait for the 'exit' event because it may fire before
-          // all queued messages have been processed by this listener.
+
           settle(resolve);
           break;
 
@@ -145,13 +127,11 @@ function runWorker(
     });
 
     worker.on('exit', (code) => {
-      // If we already resolved/rejected from a message, ignore this.
+     
       if (settled) return;
 
-      // Worker exited without sending 'complete' or 'error' — treat as error.
       if (code === 0) {
-        // Exited cleanly but never sent 'complete' — resolve anyway so we
-        // don't hang forever (e.g. empty zip with no file entries).
+
         settle(resolve);
       } else {
         settle(() => reject(new Error(`Extract worker exited with code ${code}`)));

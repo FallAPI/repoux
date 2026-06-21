@@ -372,7 +372,6 @@ export async function installModFromZip(
     extractPath: modInstallPath,
     modName: modFolderName,
     onProgress: (progress) => {
-      // Adjust progress to start from 50%
       if (progress.percent !== undefined) {
         const adjustedPercent = 50 + Math.round(progress.percent * 0.4);
         onProgress?.({ ...progress, percent: adjustedPercent });
@@ -382,7 +381,7 @@ export async function installModFromZip(
     },
   });
 
-  const version = '1.0.0'; // Default version for local zips
+  const version = '1.0.0'; 
   const installedMod: InstalledMod = {
     id: modFolderName,
     name: modFolderName,

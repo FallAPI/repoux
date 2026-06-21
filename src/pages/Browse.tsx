@@ -69,8 +69,6 @@ export function BrowsePage() {
     setInstallProgress(null)
     setError(null)
 
-    // Register listener BEFORE the install call and clean it up in `finally`
-    // so it is always removed regardless of success or failure.
     const removeListener = window.electronAPI.onProgress((p) => {
       setInstallProgress(p)
     })
@@ -94,7 +92,6 @@ export function BrowsePage() {
         setError('Gagal menginstall mod.')
       }
     } finally {
-      // Always clean up the listener — even if install threw an error.
       removeListener()
       setInstallingModId(null)
     }
@@ -105,8 +102,6 @@ export function BrowsePage() {
     [installedMods]
   )
 
-  // Memoize the filtered list so re-renders from unrelated state changes
-  // (e.g. progress updates) don't re-run the filter over 1000+ mods.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return browseMods
