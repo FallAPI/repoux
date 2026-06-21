@@ -20,9 +20,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkUpdates: () => ipcRenderer.invoke('mod:checkUpdates'),
   checkConflicts: () => ipcRenderer.invoke('mod:checkConflicts'),
   cancelInstall: (modId: string) => ipcRenderer.invoke('mod:cancel', modId),
+
+  // Profile management
+  getProfiles: () => ipcRenderer.invoke('profile:getList'),
+  saveProfile: (profile: { profileName: string; mods: string[] }) =>
+    ipcRenderer.invoke('profile:save', profile),
+  loadProfile: (profileName: string) => ipcRenderer.invoke('profile:load', profileName),
+  deleteProfile: (profileName: string) => ipcRenderer.invoke('profile:delete', profileName),
+  applyProfile: (profileName: string) => ipcRenderer.invoke('profile:apply', profileName),
+  createProfileFromCurrent: (profileName: string) =>
+    ipcRenderer.invoke('profile:createFromCurrent', profileName),
+
+  /**
+   * Subscribe to install progress events.
+   *
+   * Returns a cleanup function that removes ONLY the registered handler,
+   * so multiple concurrent subscriptions (e.g. different components) do not
+   * interfere with each other.
+   */
   onProgress: (cb: (data: { step: string; message: string; percent?: number }) => void) => {
-    ipcRenderer.on('install:progress', (_e, data) => cb(data))
-    return () => ipcRenderer.removeAllListeners('install:progress')
+    // Wrap in a named function so we can remove exactly this listener later.
+    const handler = (_event: Electron.IpcRendererEvent, data: { step: string; message: string; percent?: number }) => {
+      cb(data)
+    }
+    ipcRenderer.on('install:progress', handler)
+    // Return a cleanup function that only removes this specific handler.
+    return () => ipcRenderer.removeListener('install:progress', handler)
   },
 
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),

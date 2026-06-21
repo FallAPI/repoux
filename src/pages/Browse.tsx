@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import type { ThunderstoreMod } from '../types'
 import { ModCard } from '../components/ModCard'
@@ -68,14 +68,15 @@ export function BrowsePage() {
     setInstallingModId(mod.full_name)
     setInstallProgress(null)
     setError(null)
+
+    const removeListener = window.electronAPI.onProgress((p) => {
+      setInstallProgress(p)
+    })
+
     try {
-      const removeListener = window.electronAPI.onProgress((p) => {
-        setInstallProgress(p)
-      })
       await window.electronAPI.installMod(mod.full_name)
       const updated = await window.electronAPI.getInstalledMods()
       setInstalledMods(updated)
-      removeListener()
       setInstallProgress(null)
     } catch (e) {
       const raw = e instanceof Error ? e.message : ''
@@ -91,18 +92,25 @@ export function BrowsePage() {
         setError('Gagal menginstall mod.')
       }
     } finally {
+      removeListener()
       setInstallingModId(null)
     }
   }
 
-  const installedIds = new Set(installedMods.map(m => m.id))
-  const filtered = query.trim()
-    ? browseMods.filter(m =>
-      m.name.toLowerCase().includes(query.toLowerCase()) ||
-      m.owner.toLowerCase().includes(query.toLowerCase()) ||
-      m.versions[0]?.description.toLowerCase().includes(query.toLowerCase())
+  const installedIds = useMemo(
+    () => new Set(installedMods.map(m => m.id)),
+    [installedMods]
+  )
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return browseMods
+    return browseMods.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      m.owner.toLowerCase().includes(q) ||
+      m.versions[0]?.description.toLowerCase().includes(q)
     )
-    : browseMods
+  }, [query, browseMods])
 
   const totalItems = filtered.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))

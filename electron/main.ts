@@ -16,6 +16,14 @@ import {
 } from './modules/modInstaller';
 import { launchGame } from './modules/launcher';
 import { readSettings, writeSettings } from './modules/settings';
+import {
+  getProfileList,
+  saveProfile,
+  loadProfile,
+  deleteProfile,
+  applyProfile,
+  createProfileFromCurrent,
+} from './modules/profile';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -201,6 +209,31 @@ async function registerIpcHandlers(): Promise<void> {
     if (!settings.gamePath) return [];
     return checkConflicts(settings.gamePath);
   });
+
+  // Profiles
+  ipcMain.handle('profile:getList', async () => getProfileList());
+
+  ipcMain.handle('profile:save', async (_e, profile: { profileName: string; mods: string[] }) =>
+    saveProfile(profile)
+  );
+
+  ipcMain.handle('profile:load', async (_e, profileName: string) =>
+    loadProfile(profileName)
+  );
+
+  ipcMain.handle('profile:delete', async (_e, profileName: string) =>
+    deleteProfile(profileName)
+  );
+
+  ipcMain.handle('profile:apply', async (_e, profileName: string) => {
+    const settings = await readSettings();
+    if (!settings.gamePath) throw new Error('Game path not set');
+    return applyProfile(profileName, settings.gamePath);
+  });
+
+  ipcMain.handle('profile:createFromCurrent', async (_e, profileName: string) =>
+    createProfileFromCurrent(profileName)
+  );
 
  
   ipcMain.handle('game:launch', async () => {

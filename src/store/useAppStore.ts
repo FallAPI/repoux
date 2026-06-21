@@ -5,7 +5,7 @@ import type {
   InstalledMod,
   ThunderstoreMod,
   InstallProgress,
-  ModProfile,
+  ProfileSummary,
   ModConflict
 } from '../types'
 
@@ -24,7 +24,7 @@ interface AppState {
   updates: Record<string, { hasUpdate: boolean; latestVersion: string }>
   conflicts: ModConflict[]
 
-  profiles: ModProfile[]
+  profiles: ProfileSummary[]
   activeProfile: string | null
 
   page: 'home' | 'browse' | 'installed' | 'settings'
@@ -41,7 +41,7 @@ interface AppState {
   setUpdates: (u: Record<string, { hasUpdate: boolean; latestVersion: string }>) => void
   setConflicts: (c: ModConflict[]) => void
   setInitialized: (v: boolean) => void
-  setProfiles: (profiles: ModProfile[]) => void
+  setProfiles: (profiles: ProfileSummary[]) => void
   setActiveProfile: (name: string | null) => void
 }
 
